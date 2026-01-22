@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFileDialog,
     QVBoxLayout, QHBoxLayout, QLineEdit, QMessageBox, QTableWidget,
@@ -13,11 +13,13 @@ from logic import (
     evaluate_payment_across_all_products
 )
 
-
 class PaymentApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Payment Status Analyzer")
+        self.setWindowTitle("Customer 360 Insight")
+        logo_path = Path("360logo.png")
+        if logo_path.exists():
+            self.setWindowIcon(QIcon(str(logo_path)))
         self.setMinimumSize(1100, 650)
 
         self.disbursed_path = None
@@ -104,12 +106,6 @@ class PaymentApp(QWidget):
         main_layout = QVBoxLayout()
         main_layout.setSpacing(14)
         main_layout.setContentsMargins(20, 20, 20, 20)
-
-        title = QLabel("Payment Status Analyzer")
-        title.setObjectName("TitleLabel")
-        title.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(title)
-
         upload_label = QLabel("Upload Files")
         upload_label.setProperty("class", "section")
         main_layout.addWidget(upload_label)

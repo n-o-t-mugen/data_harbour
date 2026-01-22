@@ -7,13 +7,10 @@ import glob
 
 
 # =======================
-# CONFIG
+# CONFIGxoll
 # =======================
 
 load_dotenv()
-
-DISBURSED_FILE = Path(os.getenv("DATA_FILE_PATH"))
-COLLECTION_FILE = Path(os.getenv("COLLECTION_FILE_PATH"))
 
 TARGET_COLUMN = os.getenv("TARGET_COLUMN")  # Pancard
 CASE_SENSITIVE = os.getenv("CASE_SENSITIVE", "true").lower() == "true"
@@ -337,30 +334,3 @@ def evaluate_payment_across_all_products(pan_value: str) -> dict:
         "table": combined,
     }
 
-
-# =======================
-# MAIN WORKFLOW
-# =======================
-
-# if __name__ == "__main__":
-#     conn = None
-#     try:
-#         # Load current CSVs into their product DB
-#         product, conn = process_uploaded_files(DISBURSED_FILE, COLLECTION_FILE)
-#         conn.close()
-#         conn = None
-
-#         # Example: search this PAN across ALL product DBs in CWD
-#         pan = "BBUPM2364P"
-#         result = evaluate_payment_across_all_products(pan)
-#         print(f"\nPAN: {result['pan']} | Records across all products: {result['total_records']}")
-#         print(result["table"])
-#     except Exception as e:
-#         print(f"❌ Error: {e}")
-#         import traceback
-
-#         traceback.print_exc()
-#     finally:
-#         if conn:
-#             conn.close()
-#             print("✅ DB connection closed")

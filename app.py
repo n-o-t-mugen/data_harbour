@@ -40,7 +40,7 @@ class PaymentApp(QWidget):
 
         self.disbursed_path = None
         self.collection_path = None
-        self.last_sql_df = None  # SQL result cache
+        self.last_sql_df = None
 
         self.apply_styles()
         self.init_ui()
@@ -119,7 +119,7 @@ class PaymentApp(QWidget):
         main_layout.setSpacing(14)
         main_layout.setContentsMargins(20, 20, 20, 20)
 
-        # ---- Upload section ----
+        # ---- Upload ----
         upload_label = QLabel("Upload Files")
         upload_label.setProperty("class", "section")
         main_layout.addWidget(upload_label)
@@ -171,7 +171,7 @@ class PaymentApp(QWidget):
 
         self.sql_input = QLineEdit()
         self.sql_input.setPlaceholderText(
-            "Enter SQL query (e.g. SELECT * FROM ELI LIMIT 50)"
+            "e.g. SELECT * FROM ELI d LEFT JOIN collection c ON d.LeadID = c.LeadID"
         )
 
         self.run_sql_btn = QPushButton("Run Query")
@@ -262,7 +262,7 @@ class PaymentApp(QWidget):
             QMessageBox.critical(self, "Error", str(e))
 
     # =======================
-    # SQL QUERY
+    # SQL QUERY ENGINE
     # =======================
     def run_sql_query(self):
         raw_query = self.sql_input.text().strip()
@@ -270,50 +270,33 @@ class PaymentApp(QWidget):
             QMessageBox.warning(self, "Invalid Query", "SQL query cannot be empty.")
             return
 
-        all_results = []
-        query_upper = raw_query.upper()
-
         try:
-            dbs = list_product_dbs()
+            # Create ONE master connection
+            conn = sqlite3.connect(":memory:")
 
-            for db in dbs:
-                product = db.stem.upper()
+            # Attach all product DBs
+            for db in list_product_dbs():
+                alias = db.stem.upper()
+                conn.execute(f"ATTACH DATABASE '{db}' AS {alias}")
 
-                if f"FROM {product}" in query_upper:
-                    rewritten_query = raw_query.replace(
-                        f"FROM {product}", "FROM disbursed"
-                    )
-                else:
-                    if "FROM " in query_upper and any(
-                        f"FROM {other.stem.upper()}" in query_upper
-                        for other in dbs
-                        if other.stem.upper() != product
-                    ):
-                        continue
-                    rewritten_query = raw_query
+            # Execute user query ONCE
+            df = pd.read_sql_query(raw_query, conn)
 
-                conn = sqlite3.connect(db)
-                try:
-                    df = pd.read_sql_query(rewritten_query, conn)
-                    if not df.empty:
-                        df["Product"] = product
-                        all_results.append(df)
-                finally:
-                    conn.close()
+            conn.close()
 
-            if not all_results:
+            if df.empty:
                 QMessageBox.information(self, "No Results", "Query returned no rows.")
                 self.table.clear()
                 self.export_sql_btn.setEnabled(False)
                 return
 
-            combined = pd.concat(all_results, ignore_index=True)
-            self.last_sql_df = combined
-            self.populate_table(combined)
+            self.last_sql_df = df
+            self.populate_table(df)
             self.export_sql_btn.setEnabled(True)
 
         except Exception as e:
             QMessageBox.critical(self, "SQL Error", str(e))
+
 
     def export_sql_result(self):
         if self.last_sql_df is None or self.last_sql_df.empty:

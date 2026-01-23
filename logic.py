@@ -1,9 +1,10 @@
 import os
-from pathlib import Path
-from dotenv import load_dotenv
-import pandas as pd
-import sqlite3
 import glob
+import sqlite3
+from pathlib import Path
+
+import pandas as pd
+from dotenv import load_dotenv
 
 # =======================
 # CONFIG
@@ -45,10 +46,10 @@ INT_COLLECTION_DATE = "__collection_date"
 
 GRACE_DAYS = 3
 
-
 # =======================
 # HELPERS
 # =======================
+
 
 def normalize_headers(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = df.columns.str.strip().str.replace(" ", "")
@@ -59,7 +60,9 @@ def validate_columns(df: pd.DataFrame, required: set, name: str):
     missing = required - set(df.columns)
     if missing:
         raise KeyError(f"{name} missing columns: {sorted(missing)}")
-def read_csv_flexible(path: Path, sample_only=False) -> pd.DataFrame:
+
+
+def read_csv_flexible(path: Path, sample_only: bool = False) -> pd.DataFrame:
     encodings_to_try = ["utf-8", "utf-8-sig", "latin1", "cp1252"]
 
     for encoding in encodings_to_try:
@@ -76,7 +79,9 @@ def read_csv_flexible(path: Path, sample_only=False) -> pd.DataFrame:
                 df = normalize_headers(df)
 
                 if LEAD_ID_COL in df.columns and LOAN_NO_COL in df.columns:
-                    print(f"✅ Parsed {path.name} using encoding={encoding}, skiprows={skiprows}")
+                    print(
+                        f"✅ Parsed {path.name} using encoding={encoding}, skiprows={skiprows}"
+                    )
                     return df
 
             except UnicodeDecodeError:
@@ -87,7 +92,6 @@ def read_csv_flexible(path: Path, sample_only=False) -> pd.DataFrame:
     raise ValueError(
         f"Could not parse CSV {path.name} — unsupported encoding or corrupt file"
     )
-
 
 
 def table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
@@ -130,6 +134,7 @@ def upsert_dataframe(
 # MAIN INGESTION
 # =======================
 
+
 def process_uploaded_files(
     disbursed_path: Path,
     collection_path: Path,
@@ -167,8 +172,9 @@ def process_uploaded_files(
 
 
 # =======================
-# EVALUATION (UNCHANGED)
+# DB DISCOVERY
 # =======================
+
 
 def list_product_dbs(base_dir: Path | None = None) -> list[Path]:
     if base_dir is None:
@@ -176,7 +182,14 @@ def list_product_dbs(base_dir: Path | None = None) -> list[Path]:
     return [Path(p) for p in glob.glob(str(base_dir / "*.db"))]
 
 
-def evaluate_payment_status_for_conn(pan_value: str, conn: sqlite3.Connection) -> dict:
+# =======================
+# PAYMENT EVALUATION
+# =======================
+
+
+def evaluate_payment_status_for_conn(
+    pan_value: str, conn: sqlite3.Connection
+) -> dict:
     if not pan_value.strip():
         raise ValueError("PAN cannot be empty")
 
@@ -205,17 +218,34 @@ def evaluate_payment_status_for_conn(pan_value: str, conn: sqlite3.Connection) -
     collection_df = normalize_headers(collection_df)
 
     disbursed_df = disbursed_df.rename(
-        columns={LEAD_ID_COL: INT_LEAD_ID, REPAYMENT_DATE_COL: INT_REPAY_DATE}
+        columns={
+            LEAD_ID_COL: INT_LEAD_ID,
+            REPAYMENT_DATE_COL: INT_REPAY_DATE,
+        }
     )
     collection_df = collection_df.rename(
-        columns={LEAD_ID_COL: INT_LEAD_ID, COLLECTION_DATE_COL: INT_COLLECTION_DATE}
+        columns={
+            LEAD_ID_COL: INT_LEAD_ID,
+            COLLECTION_DATE_COL: INT_COLLECTION_DATE,
+        }
     )
 
-    disbursed_df[INT_REPAY_DATE] = pd.to_datetime(disbursed_df[INT_REPAY_DATE], errors="coerce")
-    collection_df[INT_COLLECTION_DATE] = pd.to_datetime(collection_df[INT_COLLECTION_DATE], errors="coerce")
+    disbursed_df[INT_REPAY_DATE] = pd.to_datetime(
+        disbursed_df[INT_REPAY_DATE], errors="coerce"
+    )
+    collection_df[INT_COLLECTION_DATE] = pd.to_datetime(
+        collection_df[INT_COLLECTION_DATE], errors="coerce"
+    )
 
-    collection_agg = collection_df.groupby(INT_LEAD_ID, as_index=False)[INT_COLLECTION_DATE].max()
-    merged = pd.merge(disbursed_df, collection_agg, on=INT_LEAD_ID, how="left")
+    collection_agg = (
+        collection_df.groupby(INT_LEAD_ID, as_index=False)[
+            INT_COLLECTION_DATE
+        ].max()
+    )
+
+    merged = pd.merge(
+        disbursed_df, collection_agg, on=INT_LEAD_ID, how="left"
+    )
 
     rows = []
     for _, row in merged.iterrows():
@@ -229,16 +259,24 @@ def evaluate_payment_status_for_conn(pan_value: str, conn: sqlite3.Connection) -
         elif collect == repay:
             status = "ON_TIME"
         else:
-            status = "COOLING_PERIOD" if (collect - repay).days <= GRACE_DAYS else "LATE"
+            status = (
+                "COOLING_PERIOD"
+                if (collect - repay).days <= GRACE_DAYS
+                else "LATE"
+            )
 
-        rows.append({
-            "pan": pan_value,
-            "LeadID": row[INT_LEAD_ID],
-            "RepayDate": repay.date() if pd.notna(repay) else None,
-            "CollectionDate": collect.date() if pd.notna(collect) else None,
-            "PaymentStatus": status,
-            **{col: row.get(col) for col in DISPLAY_COLUMNS},
-        })
+        rows.append(
+            {
+                "pan": pan_value,
+                "LeadID": row[INT_LEAD_ID],
+                "RepayDate": repay.date() if pd.notna(repay) else None,
+                "CollectionDate": collect.date()
+                if pd.notna(collect)
+                else None,
+                "PaymentStatus": status,
+                **{col: row.get(col) for col in DISPLAY_COLUMNS},
+            }
+        )
 
     result_df = pd.DataFrame(rows)
     result_df.to_sql("queries", conn, if_exists="append", index=False)
@@ -264,5 +302,14 @@ def evaluate_payment_across_all_products(pan_value: str) -> dict:
         finally:
             conn.close()
 
-    combined = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
-    return {"pan": pan_value, "total_records": len(combined), "table": combined}
+    combined = (
+        pd.concat(all_rows, ignore_index=True)
+        if all_rows
+        else pd.DataFrame()
+    )
+
+    return {
+        "pan": pan_value,
+        "total_records": len(combined),
+        "table": combined,
+    }

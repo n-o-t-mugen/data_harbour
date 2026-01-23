@@ -53,22 +53,33 @@ import pandas as pd
 
 from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QFileDialog,
-    QVBoxLayout, QHBoxLayout, QLineEdit, QMessageBox, QTableWidget,
-    QTableWidgetItem, QHeaderView, QFrame
+    QApplication,
+    QWidget,
+    QLabel,
+    QPushButton,
+    QFileDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLineEdit,
+    QMessageBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QFrame,
 )
 from PySide6.QtCore import Qt
 
 from logic import (
     process_uploaded_files,
     evaluate_payment_across_all_products,
-    list_product_dbs
+    list_product_dbs,
 )
 
 
 class PaymentApp(QWidget):
     def __init__(self):
         super().__init__()
+
         self.setWindowTitle("Customer 360 Insight")
         logo_path = Path("360logo.png")
         if logo_path.exists():
@@ -77,7 +88,7 @@ class PaymentApp(QWidget):
 
         self.disbursed_path = None
         self.collection_path = None
-        self.last_sql_df = None  # <-- SQL result cache
+        self.last_sql_df = None
 
         self.apply_styles()
         self.init_ui()
@@ -86,7 +97,8 @@ class PaymentApp(QWidget):
     # STYLES (UI ONLY)
     # =======================
     def apply_styles(self):
-        self.setStyleSheet("""
+        self.setStyleSheet(
+            """
             QWidget {
                 font-family: 'Segoe UI', 'Inter', Arial;
                 font-size: 14px;
@@ -144,7 +156,8 @@ class PaymentApp(QWidget):
             QTableWidget::item {
                 padding: 6px;
             }
-        """)
+        """
+        )
 
     # =======================
     # UI LAYOUT
@@ -154,12 +167,13 @@ class PaymentApp(QWidget):
         main_layout.setSpacing(14)
         main_layout.setContentsMargins(20, 20, 20, 20)
 
-        # ---- Upload section ----
+        # ---- Upload ----
         upload_label = QLabel("Upload Files")
         upload_label.setProperty("class", "section")
         main_layout.addWidget(upload_label)
 
         file_layout = QHBoxLayout()
+
         self.disbursed_btn = QPushButton("Upload Disbursed CSV")
         self.disbursed_btn.clicked.connect(self.load_disbursed)
 
@@ -183,6 +197,7 @@ class PaymentApp(QWidget):
         main_layout.addWidget(pan_label)
 
         pan_layout = QHBoxLayout()
+
         self.pan_input = QLineEdit()
         self.pan_input.setPlaceholderText("Enter PAN (e.g. BBUPM2364P)")
 
@@ -191,18 +206,20 @@ class PaymentApp(QWidget):
 
         pan_layout.addWidget(self.pan_input)
         pan_layout.addWidget(self.search_btn)
+
         main_layout.addLayout(pan_layout)
         main_layout.addWidget(self.hline())
 
-        # ---- SQL Query Section (NEW) ----
+        # ---- SQL Query ----
         sql_label = QLabel("SQL Query")
         sql_label.setProperty("class", "section")
         main_layout.addWidget(sql_label)
 
         sql_layout = QHBoxLayout()
+
         self.sql_input = QLineEdit()
         self.sql_input.setPlaceholderText(
-            "Enter SQL query (e.g. SELECT * FROM disbursed LIMIT 50)"
+            "e.g. SELECT * FROM ELI d LEFT JOIN collection c ON d.LeadID = c.LeadID"
         )
 
         self.run_sql_btn = QPushButton("Run Query")
@@ -228,7 +245,9 @@ class PaymentApp(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeToContents
+        )
 
         main_layout.addWidget(self.table)
         self.setLayout(main_layout)
@@ -244,13 +263,17 @@ class PaymentApp(QWidget):
     # ACTIONS
     # =======================
     def load_disbursed(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select Disbursed CSV", "", "CSV Files (*.csv)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Disbursed CSV", "", "CSV Files (*.csv)"
+        )
         if path:
             self.disbursed_path = Path(path)
             self.disbursed_btn.setText(f"Disbursed: {Path(path).name}")
 
     def load_collection(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select Collection CSV", "", "CSV Files (*.csv)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Collection CSV", "", "CSV Files (*.csv)"
+        )
         if path:
             self.collection_path = Path(path)
             self.collection_btn.setText(f"Collection: {Path(path).name}")
@@ -260,9 +283,13 @@ class PaymentApp(QWidget):
             QMessageBox.warning(self, "Missing Files", "Please upload both CSV files.")
             return
         try:
-            product, conn = process_uploaded_files(self.disbursed_path, self.collection_path)
+            product, conn = process_uploaded_files(
+                self.disbursed_path, self.collection_path
+            )
             conn.close()
-            QMessageBox.information(self, "Success", f"Product DB ready: {product}.db")
+            QMessageBox.information(
+                self, "Success", f"Product DB ready: {product}.db"
+            )
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
 
@@ -283,23 +310,41 @@ class PaymentApp(QWidget):
             QMessageBox.critical(self, "Error", str(e))
 
     # =======================
-    # SQL QUERY (NEW)
+    # SQL QUERY ENGINE
     # =======================
     def run_sql_query(self):
-        query = self.sql_input.text().strip()
-        if not query:
+        raw_query = self.sql_input.text().strip()
+        if not raw_query:
             QMessageBox.warning(self, "Invalid Query", "SQL query cannot be empty.")
             return
 
         all_results = []
+        query_upper = raw_query.upper()
 
         try:
-            for db in list_product_dbs():
+            dbs = list_product_dbs()
+
+            for db in dbs:
+                product = db.stem.upper()
+
+                if f"FROM {product}" in query_upper:
+                    rewritten_query = raw_query.replace(
+                        f"FROM {product}", "FROM disbursed"
+                    )
+                else:
+                    if "FROM " in query_upper and any(
+                        f"FROM {other.stem.upper()}" in query_upper
+                        for other in dbs
+                        if other.stem.upper() != product
+                    ):
+                        continue
+                    rewritten_query = raw_query
+
                 conn = sqlite3.connect(db)
                 try:
-                    df = pd.read_sql_query(query, conn)
+                    df = pd.read_sql_query(rewritten_query, conn)
                     if not df.empty:
-                        df["Product"] = db.stem
+                        df["Product"] = product
                         all_results.append(df)
                 finally:
                     conn.close()
@@ -327,7 +372,7 @@ class PaymentApp(QWidget):
             self,
             "Export Query Result",
             "sql_query_result.csv",
-            "CSV Files (*.csv)"
+            "CSV Files (*.csv)",
         )
 
         if path:
@@ -345,10 +390,12 @@ class PaymentApp(QWidget):
 
         rows = len(df)
         cols = len(df.columns) + 1
+
         self.table.setRowCount(rows)
         self.table.setColumnCount(cols)
-
-        self.table.setHorizontalHeaderLabels(["S. No."] + df.columns.tolist())
+        self.table.setHorizontalHeaderLabels(
+            ["S. No."] + df.columns.tolist()
+        )
 
         PRODUCT_COLORS = {
             "ELI": QColor("#fde2e2"),
@@ -357,7 +404,9 @@ class PaymentApp(QWidget):
             "LDR": QColor("#f3e8ff"),
         }
 
-        product_col_index = df.columns.get_loc("Product") if "Product" in df.columns else None
+        product_col_index = (
+            df.columns.get_loc("Product") if "Product" in df.columns else None
+        )
 
         for r in range(rows):
             index_item = QTableWidgetItem(str(r + 1))
@@ -395,11 +444,12 @@ FILE: logic.py
 ################################################################################
 
 import os
-from pathlib import Path
-from dotenv import load_dotenv
-import pandas as pd
-import sqlite3
 import glob
+import sqlite3
+from pathlib import Path
+
+import pandas as pd
+from dotenv import load_dotenv
 
 # =======================
 # CONFIG
@@ -441,10 +491,10 @@ INT_COLLECTION_DATE = "__collection_date"
 
 GRACE_DAYS = 3
 
-
 # =======================
 # HELPERS
 # =======================
+
 
 def normalize_headers(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = df.columns.str.strip().str.replace(" ", "")
@@ -455,7 +505,9 @@ def validate_columns(df: pd.DataFrame, required: set, name: str):
     missing = required - set(df.columns)
     if missing:
         raise KeyError(f"{name} missing columns: {sorted(missing)}")
-def read_csv_flexible(path: Path, sample_only=False) -> pd.DataFrame:
+
+
+def read_csv_flexible(path: Path, sample_only: bool = False) -> pd.DataFrame:
     encodings_to_try = ["utf-8", "utf-8-sig", "latin1", "cp1252"]
 
     for encoding in encodings_to_try:
@@ -472,7 +524,9 @@ def read_csv_flexible(path: Path, sample_only=False) -> pd.DataFrame:
                 df = normalize_headers(df)
 
                 if LEAD_ID_COL in df.columns and LOAN_NO_COL in df.columns:
-                    print(f"✅ Parsed {path.name} using encoding={encoding}, skiprows={skiprows}")
+                    print(
+                        f"✅ Parsed {path.name} using encoding={encoding}, skiprows={skiprows}"
+                    )
                     return df
 
             except UnicodeDecodeError:
@@ -483,7 +537,6 @@ def read_csv_flexible(path: Path, sample_only=False) -> pd.DataFrame:
     raise ValueError(
         f"Could not parse CSV {path.name} — unsupported encoding or corrupt file"
     )
-
 
 
 def table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
@@ -526,6 +579,7 @@ def upsert_dataframe(
 # MAIN INGESTION
 # =======================
 
+
 def process_uploaded_files(
     disbursed_path: Path,
     collection_path: Path,
@@ -563,8 +617,9 @@ def process_uploaded_files(
 
 
 # =======================
-# EVALUATION (UNCHANGED)
+# DB DISCOVERY
 # =======================
+
 
 def list_product_dbs(base_dir: Path | None = None) -> list[Path]:
     if base_dir is None:
@@ -572,7 +627,14 @@ def list_product_dbs(base_dir: Path | None = None) -> list[Path]:
     return [Path(p) for p in glob.glob(str(base_dir / "*.db"))]
 
 
-def evaluate_payment_status_for_conn(pan_value: str, conn: sqlite3.Connection) -> dict:
+# =======================
+# PAYMENT EVALUATION
+# =======================
+
+
+def evaluate_payment_status_for_conn(
+    pan_value: str, conn: sqlite3.Connection
+) -> dict:
     if not pan_value.strip():
         raise ValueError("PAN cannot be empty")
 
@@ -601,17 +663,34 @@ def evaluate_payment_status_for_conn(pan_value: str, conn: sqlite3.Connection) -
     collection_df = normalize_headers(collection_df)
 
     disbursed_df = disbursed_df.rename(
-        columns={LEAD_ID_COL: INT_LEAD_ID, REPAYMENT_DATE_COL: INT_REPAY_DATE}
+        columns={
+            LEAD_ID_COL: INT_LEAD_ID,
+            REPAYMENT_DATE_COL: INT_REPAY_DATE,
+        }
     )
     collection_df = collection_df.rename(
-        columns={LEAD_ID_COL: INT_LEAD_ID, COLLECTION_DATE_COL: INT_COLLECTION_DATE}
+        columns={
+            LEAD_ID_COL: INT_LEAD_ID,
+            COLLECTION_DATE_COL: INT_COLLECTION_DATE,
+        }
     )
 
-    disbursed_df[INT_REPAY_DATE] = pd.to_datetime(disbursed_df[INT_REPAY_DATE], errors="coerce")
-    collection_df[INT_COLLECTION_DATE] = pd.to_datetime(collection_df[INT_COLLECTION_DATE], errors="coerce")
+    disbursed_df[INT_REPAY_DATE] = pd.to_datetime(
+        disbursed_df[INT_REPAY_DATE], errors="coerce"
+    )
+    collection_df[INT_COLLECTION_DATE] = pd.to_datetime(
+        collection_df[INT_COLLECTION_DATE], errors="coerce"
+    )
 
-    collection_agg = collection_df.groupby(INT_LEAD_ID, as_index=False)[INT_COLLECTION_DATE].max()
-    merged = pd.merge(disbursed_df, collection_agg, on=INT_LEAD_ID, how="left")
+    collection_agg = (
+        collection_df.groupby(INT_LEAD_ID, as_index=False)[
+            INT_COLLECTION_DATE
+        ].max()
+    )
+
+    merged = pd.merge(
+        disbursed_df, collection_agg, on=INT_LEAD_ID, how="left"
+    )
 
     rows = []
     for _, row in merged.iterrows():
@@ -625,16 +704,24 @@ def evaluate_payment_status_for_conn(pan_value: str, conn: sqlite3.Connection) -
         elif collect == repay:
             status = "ON_TIME"
         else:
-            status = "COOLING_PERIOD" if (collect - repay).days <= GRACE_DAYS else "LATE"
+            status = (
+                "COOLING_PERIOD"
+                if (collect - repay).days <= GRACE_DAYS
+                else "LATE"
+            )
 
-        rows.append({
-            "pan": pan_value,
-            "LeadID": row[INT_LEAD_ID],
-            "RepayDate": repay.date() if pd.notna(repay) else None,
-            "CollectionDate": collect.date() if pd.notna(collect) else None,
-            "PaymentStatus": status,
-            **{col: row.get(col) for col in DISPLAY_COLUMNS},
-        })
+        rows.append(
+            {
+                "pan": pan_value,
+                "LeadID": row[INT_LEAD_ID],
+                "RepayDate": repay.date() if pd.notna(repay) else None,
+                "CollectionDate": collect.date()
+                if pd.notna(collect)
+                else None,
+                "PaymentStatus": status,
+                **{col: row.get(col) for col in DISPLAY_COLUMNS},
+            }
+        )
 
     result_df = pd.DataFrame(rows)
     result_df.to_sql("queries", conn, if_exists="append", index=False)
@@ -660,8 +747,17 @@ def evaluate_payment_across_all_products(pan_value: str) -> dict:
         finally:
             conn.close()
 
-    combined = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
-    return {"pan": pan_value, "total_records": len(combined), "table": combined}
+    combined = (
+        pd.concat(all_rows, ignore_index=True)
+        if all_rows
+        else pd.DataFrame()
+    )
+
+    return {
+        "pan": pan_value,
+        "total_records": len(combined),
+        "table": combined,
+    }
 
 
 

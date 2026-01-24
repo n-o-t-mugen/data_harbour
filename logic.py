@@ -190,6 +190,10 @@ def list_product_dbs(base_dir: Path | None = None) -> list[Path]:
 def evaluate_payment_status_for_conn(
     pan_value: str, conn: sqlite3.Connection
 ) -> dict:
+
+    if not table_exists(conn, "disbursed"):
+        return {"pan": pan_value, "total_records": 0, "table": pd.DataFrame()}
+
     if not pan_value.strip():
         raise ValueError("PAN cannot be empty")
 
@@ -268,7 +272,7 @@ def evaluate_payment_status_for_conn(
         rows.append(
             {
                 "pan": pan_value,
-                "LeadID": row[INT_LEAD_ID],
+                # "LeadID": row[INT_LEAD_ID],
                 "RepayDate": repay.date() if pd.notna(repay) else None,
                 "CollectionDate": collect.date()
                 if pd.notna(collect)
